@@ -1,0 +1,677 @@
+---
+title: The development of beliefs about social mobility based on ability status in a cross cultural context_analysis code
+author: "anonymize authors' info"
+date: "02/22/2025"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r}
+#Libraries being used
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(devtools)
+library(lme4)
+library(effects)
+library(ggplot2)
+library(ggthemes)
+library(tidyr)
+library(lmerTest)
+library(emmeans)
+library(interactions)
+require(car)
+library(reshape2)
+```
+
+```{r}
+## read in full data set for awareness part
+full_data<- read.csv("full_data_osf.csv")
+```
+
+```{r}
+## change the format of the full data set
+#wide to long prep, so each pt has 2 starting points and 4 social identities. 
+
+full.long<- melt(data = full_data, measure.vars = c("disability_no_low_to_mid", 
+                                                  "disability_sensory_low_to_mid",
+                                                  "disability_physical_low_to_mid",
+                                                  "disability_learning_low_to_mid",
+                                                  "disability_no_mid_to_high", 
+                                                  "disability_physical_mid_to_high",
+                                                  "disability_sensory_mid_to_high",
+                                                  "disability_learning_mid_to_high"
+                                                   ),
+                      variable.name = "ses_identity",
+                      value.name = "likelihood_of_sm")
+
+full.long<-mutate(full.long, starting = case_when(
+  ses_identity == "disability_no_low_to_mid" ~ 'low', 
+  ses_identity == "disability_sensory_low_to_mid"~ 'low',
+  ses_identity == "disability_physical_low_to_mid" ~'low', 
+  ses_identity == "disability_learning_low_to_mid" ~ 'low', 
+  ses_identity == "disability_physical_mid_to_high" ~ 'mid', 
+  ses_identity == "disability_no_mid_to_high"~ 'mid',
+  ses_identity == "disability_sensory_mid_to_high" ~'mid', 
+  ses_identity == "disability_learning_mid_to_high" ~ 'mid'))
+
+
+full.long<-mutate(full.long, category = case_when(
+  ses_identity == "disability_no_low_to_mid" ~ 'no_disability', 
+  ses_identity == "disability_no_mid_to_high" ~ 'no_disability', 
+  ses_identity == "disability_sensory_low_to_mid" ~ 'sensory', 
+  ses_identity == "disability_sensory_mid_to_high" ~ 'sensory', 
+  ses_identity == "disability_physical_low_to_mid" ~ 'physical', 
+  ses_identity == "disability_physical_mid_to_high" ~ 'physical', 
+  ses_identity == "disability_learning_low_to_mid" ~ 'learning', 
+  ses_identity == "disability_learning_mid_to_high" ~ 'learning'))
+
+## change the reference groups and structure of data
+full.long$sid =factor(full.long$sid)
+full.long$culture<- factor(full.long$culture, levels = c("US", "Chinese"))
+full.long$starting<- factor(full.long$starting, levels = c("mid", "low"))
+full.long$category<- factor(full.long$category, levels = c("no_disability", "sensory", "physical", "learning"))
+full.long$version <- factor(full.long$version, levels = c("1","2","3","4"))
+full.long$age_group<- factor(full.long$age_group, levels = c("adult", "child"))
+full.long$location <- factor(full.long$location, levels = c("online", "in person"))
+full.long$gender <- factor(full.long$gender, levels = c("female", "male", "nonbinary"))
+#n = 2840 because 355*8 = 2840
+```
+
+```{r}
+## checking models
+
+## order
+checking_model_order = lmer(likelihood_of_sm ~ version*category + (1|sid), data = full.long)
+summary(checking_model_order)  ## no effect of order, so we will not consider it in all subsequent models
+
+## gender
+checking_model_gender = lmer(likelihood_of_sm ~ gender*category + (1|sid), data = full.long)
+summary(checking_model_gender)  ## a main effect of gender, so we will include it as a random effect across all models
+
+## location (only in child data)
+checking_model_location = lmer(likelihood_of_sm ~ location*category + (1|sid), data = subset(full.long, age_group == "child"))
+summary(checking_model_location)  ## no effect of location, so we will not include it in all subsequent models
+```
+
+```{r}
+## Do participants express awareness of disability-based disparities in upward mobility, and does this change across development? We answered this question by running a comprehensive model with data from all participants.
+comprehensive_model<- lmer(likelihood_of_sm ~ culture*age_group*category*starting+ (1|sid) + (1|gender), data = full.long)
+summary(comprehensive_model)
+```
+
+```{r}
+## Confirmatory Analyses
+
+## Do children and adults in the U.S. express an awareness of disparities in upward mobility based on disability status, and does this awareness change across development?
+
+## Analyses for U.S. children and adults 
+us.long <- subset(full.long, culture =="US")
+
+## Do U.S. participants express awareness of disability-based disparities in upward mobility?
+us_model_full <- lmer(likelihood_of_sm ~ category*age_group*starting + (1|sid) + (1|gender), data = us.long)
+summary(us_model_full) # no 3-way interaction, so drop starting as the predictor for graph
+us_model_full_2<- lmer(likelihood_of_sm ~ category*age_group+ (1|sid) + (1|gender), data = us.long)
+summary(us_model_full_2)
+```
+
+```{r}
+## descriptive numbers calculation
+## calculate the mean and SD of for children and adults separately
+aggregate(likelihood_of_sm ~ age_group, data = us.long, FUN = mean)
+aggregate(likelihood_of_sm ~ age_group, data = us.long, FUN = sd)
+
+## calculate the mean and SD for each disability category 
+aggregate(likelihood_of_sm ~ category, data = us.long, FUN = mean)
+aggregate(likelihood_of_sm ~ category, data = us.long, FUN = sd)
+
+## calculate the mean and SD for each category among U.S. adults
+aggregate(likelihood_of_sm ~ category, data = subset(us.long, age_group == "adult"), FUN = mean)
+aggregate(likelihood_of_sm ~ category, data = subset(us.long, age_group == "adult"), FUN = sd)
+
+## calculate the mean and SD for each category among U.S. children
+aggregate(likelihood_of_sm ~ category, data = subset(us.long, age_group == "child"), FUN = mean)
+aggregate(likelihood_of_sm ~ category, data = subset(us.long, age_group == "child"), FUN = sd)
+
+```
+
+```{r}
+## post-hoc analysis: U.S. children vs. U.S. adults 
+US_pairwise <- emmeans(us_model_full, pairwise ~ age_group*category)
+US_pairwise <-as.data.frame(US_pairwise)
+US_pairwise 
+write.csv(US_pairwise, "US_pairwise.csv")
+
+emm_US_mean<- effect("category*age_group", us_model_full_2, confidence.level = 0.95)
+emm_US_mean <-as.data.frame(emm_US_mean)
+emm_US_mean
+view(emm_US_mean)
+```
+
+
+```{r}
+## Figure 1
+
+## re-level the data so the categories on x-axis follow a certain order
+emm_US_mean$category <- factor(emm_US_mean$category,
+                              levels = c("no_disability", "physical", "sensory", "learning"))
+us.long$category <- factor(us.long$category,
+                           levels = c("no_disability", "physical", "sensory", "learning"))
+
+## graph the Chinese data: children and adults: lower status
+
+Figure_1<-ggplot() +
+  geom_point(data = emm_US_mean, 
+             aes(x = category, y = fit, colour = age_group), 
+             stat = "identity", size = 2) +
+    geom_jitter(data = us.long,
+              aes(x = category, y = likelihood_of_sm, colour = age_group),
+              stat = "identity", size = 0.5, alpha = .50, height = 0, width = 0.25, shape = 124) + ylim(1,5) +
+  geom_errorbar(data = emm_US_mean,
+                width = .2,
+                aes(x = category, ymax = upper, ymin = lower, colour = age_group)) +
+  scale_x_discrete(breaks=c("no_disability", "physical", "sensory", "learning"), labels = c("No disability","Physical disability", "Sensory disability", "Learning disability")) + 
+  theme_few() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10)) +
+  scale_colour_solarized() +
+  labs(y = "Likelihood of upward social mobility", x = "Disability status", color = "age group")
+
+Figure_1
+  
+Figure_1 <- ggsave("Figure_1.tiff", units="in", width=7, height=6, dpi=700, compression = 'lzw')
+
+```
+
+
+
+```{r}
+##Analyses for U.S. children
+us.child.long = subset(us.long, age_group =="child")
+## center the age
+summary(us.child.long$age_exact)  ## get the averaged age = 7.03
+us.child.long $ age_centered = us.child.long $ age_exact -  7.03
+
+## MAIN MODEL
+# Do U.S.children express awareness of disparities in upward mobility for families with different disability status?
+us_child_model <- lmer(likelihood_of_sm ~ starting*category*age_centered + (1|sid) + (1|gender), data = us.child.long)
+summary(us_child_model)
+
+## post-hoc analysis
+## separate the data into 2 models: one for economically advantaged families, one for economically disadvantaged families
+## model for economically disadvantaged families
+us.child.long.low = subset(us.child.long, starting == "low")
+us_child_model_low <- lmer(likelihood_of_sm ~ category*age_centered + (1|sid) + (1|gender), data = us.child.long.low)
+summary(us_child_model_low)
+
+## model for economically disadvantaged families
+us.child.long.high = subset(us.child.long, starting == "mid")
+us_child_model_high <- lmer(likelihood_of_sm ~ category*age_centered + (1|sid) + (1|gender), data = us.child.long.high)
+summary(us_child_model_high)
+```
+
+```{r}
+## Figure 2
+## re-level the category of data so the categories on x-axis follow a certain order
+us.child.long.low$category <- factor(us.child.long.low$category,
+                              levels = c("no_disability", "physical", "sensory", "learning"))
+us.child.long.high$category <- factor(us.child.long.high$category,
+                              levels = c("no_disability", "physical", "sensory", "learning"))
+
+Figure_2_Left<-ggplot(us.child.long.low, aes(x=age_exact, y=likelihood_of_sm, color = category)) + 
+  geom_jitter(position=position_jitter(h = 0.1, w = 0.1))+
+  scale_x_continuous(breaks=c(4,5,6,7,8,9, 10),limits = c(3.9,10))+
+  scale_y_continuous(limits = c(1, 5))+
+  geom_smooth(method = "lm") + theme_bw() + 
+  xlab("Age (in years)") + ylab("Likelihood of upward social mobility") +
+  theme(axis.title = element_text(size=14), axis.text  = element_text(size=12),legend.text = element_text(size=12))+
+  theme(axis.title.y = element_text(angle = 90, hjust = .5, vjust = .5))+
+  scale_shape_manual(values = c(2,1)) + 
+  scale_color_discrete(labels = c(
+  "no_disability" = "No disability",
+  "sensory" = "Sensory disability",
+  "physical" = "Physical disability",
+  "learning" = "Learning disability"))
+
+Figure_2_Left
+Figure_2_Left <- ggsave("Figure_2_Left.tiff", units="in", width=7, height=6, dpi=700, compression = 'lzw')
+
+Figure_2_Right<-ggplot(us.child.long.high, aes(x=age_exact, y=likelihood_of_sm, color = category)) + 
+  geom_jitter(position=position_jitter(h = 0.1, w = 0.1))+
+  scale_x_continuous(breaks=c(4,5,6,7,8,9, 10),limits = c(3.9,10))+
+  scale_y_continuous(limits = c(1, 5))+
+  geom_smooth(method = "lm") + theme_bw() + 
+  xlab("Age (in years)") + ylab("Likelihood of upward social mobility") +
+  theme(axis.title = element_text(size=14), axis.text  = element_text(size=12),legend.text = element_text(size=12))+
+  theme(axis.title.y = element_text(angle = 90, hjust = .5, vjust = .5))+
+  scale_shape_manual(values = c(2,1)) + 
+  scale_color_discrete(labels = c(
+  "no_disability" = "No disability",
+  "sensory" = "Sensory disability",
+  "physical" = "Physical disability",
+  "learning" = "Learning disability"))
+
+Figure_2_Right
+Figure_2_Right <- ggsave("Figure_2_Right.tiff", units="in", width=7, height=6, dpi=700, compression = 'lzw')
+
+```
+
+```{r}
+## Age-related changes in U.S. children
+## economically disadvantaged families
+slope<-sim_slopes(model = us_child_model_low, pred = age_centered, modx = category)
+slope$slope
+## significant for sensory disability: with age, U.S. children were less likely to expect social mobility for economically advantaged families with a sensory disability
+
+## economically advantaged families
+slope<-sim_slopes(model = us_child_model_high, pred = age_centered, modx = category)
+slope$slope
+## significant for families with no disability: with age, U.S. children were more likely to expect social mobility for economically advantaged families with no disability.
+## significant for families with a physical disability: with age, U.S. children were less likely to expect social mobility for economically advantaged families with a physical disability.
+```
+
+```{r}
+## Do children and adults in China express an awareness of disparities in upward mobility based on disability status, and does this awareness change across development? 
+
+## Analyses for Chinese children and adults 
+chinese.long = subset(full.long, culture =="Chinese")
+
+## pre-registered model
+chinese_model_full <- lmer(likelihood_of_sm ~ category*age_group*starting + (1|sid) + (1|gender), data = chinese.long)
+summary(chinese_model_full) 
+
+## separate the Chinese data by starting point of the families
+chinese.long.low = subset(chinese.long, starting == "low")
+chinese.long.high= subset(chinese.long, starting == "mid")
+
+## run separate models for data of families with each starting point
+chinese_model_full_low <- lmer(likelihood_of_sm ~ category*age_group + (1|sid) + (1|gender), data = chinese.long.low)
+summary(chinese_model_full_low)
+
+chinese_model_full_high <- lmer(likelihood_of_sm ~ category*age_group + (1|sid) + (1|gender), data = chinese.long.high)
+summary(chinese_model_full_high)
+
+## calculate the mean and sd for each category (by starting point)
+aggregate(likelihood_of_sm ~ category, data = subset(chinese.long.low, age_group == "adult"), FUN = mean)
+aggregate(likelihood_of_sm ~ category, data = subset(chinese.long.low, age_group == "adult"), FUN = sd)
+aggregate(likelihood_of_sm ~ category, data = subset(chinese.long.low, age_group == "child"), FUN = mean)
+aggregate(likelihood_of_sm ~ category, data = subset(chinese.long.low, age_group == "child"), FUN = sd)
+aggregate(likelihood_of_sm ~ category, data = subset(chinese.long.high, age_group == "adult"), FUN = mean)
+aggregate(likelihood_of_sm ~ category, data = subset(chinese.long.high, age_group == "adult"), FUN = sd)
+aggregate(likelihood_of_sm ~ category, data = subset(chinese.long.high, age_group == "child"), FUN = mean)
+aggregate(likelihood_of_sm ~ category, data = subset(chinese.long.high, age_group == "child"), FUN = sd)
+```
+
+```{r}
+## post-hoc analyses
+## economically disadvantaged families
+emm_chinese_low <- emmeans(chinese_model_full_low, pairwise ~ age_group*category)
+emm_chinese_low
+emm_chinese_pairwise_low <- emmeans(chinese_model_full_low, pairwise ~ age_group*category)
+emm_chinese_pairwise_low <-as.data.frame(emm_chinese_pairwise_low)
+emm_chinese_pairwise_low
+write.csv(emm_chinese_pairwise_low, "emm_chinese_pairwise_low.csv")
+emm_chinese_mean_low <- effect("category*age_group", chinese_model_full_low, confidence.level = 0.95)
+emm_chinese_mean_low <-as.data.frame(emm_chinese_mean_low)
+emm_chinese_mean_low
+view(emm_chinese_mean_low)
+
+```
+
+```{r}
+## Figure 3 Left
+## re-level the two data sets so the categories on x-axis follow a certain order
+chinese.long.low$category <- factor(chinese.long.low$category,
+  levels = c("no_disability", "physical", "sensory", "learning"))
+
+emm_chinese_mean_low$category <- factor(emm_chinese_mean_low$category,
+  levels = c("no_disability", "physical", "sensory", "learning"))
+
+Fig_3_Left<-ggplot() +
+  geom_point(data = emm_chinese_mean_low, 
+             aes(x = category, y = fit, colour = age_group), 
+             stat = "identity", size = 2) +
+    geom_jitter(data = chinese.long.low,
+              aes(x = category, y = likelihood_of_sm, colour = age_group),
+              stat = "identity", size = 0.5, alpha = .50, height = 0, width = 0.25, shape = 124) + 
+  ylim(1,5) +
+  geom_errorbar(data = emm_chinese_mean_low,
+                width = .2,
+                aes(x = category, ymax = upper, ymin = lower, colour = age_group)) +
+  theme_few() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10)) +
+  scale_colour_solarized() +
+  labs(y = "Likelihood of upward social mobility", x = "Disability status", color = "age group")+scale_x_discrete(breaks=c("no_disability", "physical", "sensory", "learning"), labels = c("No disability","Physical disability", "Sensory disability", "Learning disability")) 
+
+Fig_3_Left
+  
+Fig_3_Left <- ggsave("Fig_3_Left.tiff", units="in", width=7, height=6, dpi=700, compression = 'lzw')
+
+```
+
+```{r}
+## economically advantaged families
+emm_chinese_high <- emmeans(chinese_model_full_high, pairwise ~ age_group*category)
+emm_chinese_high
+emm_chinese_pairwise_high <- emmeans(chinese_model_full_high, pairwise ~ age_group*category)
+emm_chinese_pairwise_high <-as.data.frame(emm_chinese_pairwise_high)
+emm_chinese_pairwise_high
+write.csv(emm_chinese_pairwise_high, "emm_chinese_pairwise_high.csv")
+emm_chinese_mean_high <- effect("category*age_group", chinese_model_full_high, confidence.level = 0.95)
+emm_chinese_mean_high <-as.data.frame(emm_chinese_mean_high)
+emm_chinese_mean_high
+view(emm_chinese_mean_high)
+
+
+## Figure 3 Right
+
+## re-level the two data sets so the categories on x-axis follow a certain order
+chinese.long.high$category <- factor(chinese.long.high$category,
+  levels = c("no_disability", "physical", "sensory", "learning"))
+
+emm_chinese_mean_high$category <- factor(emm_chinese_mean_high$category,
+  levels = c("no_disability", "physical", "sensory", "learning"))
+
+Figure_3_Right<-ggplot() +
+  geom_point(data = emm_chinese_mean_high, 
+             aes(x = category, y = fit, colour = age_group), 
+             stat = "identity", size = 2) +
+    geom_jitter(data = chinese.long.high,
+              aes(x = category, y = likelihood_of_sm, colour = age_group),
+              stat = "identity", size = 0.5, alpha = .50, height = 0, width = 0.25, shape = 124) + 
+  ylim(1,5) +
+  geom_errorbar(data = emm_chinese_mean_high,
+                width = .2,
+                aes(x = category, ymax = upper, ymin = lower, colour = age_group)) +
+  scale_x_discrete(breaks=c("No disability", "Physical disability", "Sensory disability", "Learning disability")) +
+  theme_few() +
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=10)) +
+  scale_colour_solarized() +
+  labs(y = "Likelihood of upward social mobility", x = "Disability status", color = "age group")+
+  labs(y = "Likelihood of upward social mobility", x = "Disability status", color = "age group")+scale_x_discrete(breaks=c("no_disability", "physical", "sensory", "learning"), labels = c("No disability","Physical disability", "Sensory disability", "Learning disability")) 
+
+Figure_3_Right
+  
+Figure_3_Right <- ggsave("Figure_3_Right.tiff", units="in", width=7, height=6, dpi=700, compression = 'lzw')
+```
+
+
+```{r}
+## Analyses for Chinese children
+chinese.child.long = subset(chinese.long, age_group =="child")
+## center the age
+summary(chinese.child.long$age_exact)  ## get the averaged age = 6.86
+chinese.child.long $ age_centered = chinese.child.long $ age_exact -  6.86
+
+## pre-registered model
+chinese_child_model <- lmer(likelihood_of_sm ~ starting*category*age_centered + (1|sid) + (1|gender), data = chinese.child.long)
+summary(chinese_child_model)
+## no interaction involving starting point of families.
+
+## Figure 4
+## chinese.child.long$category
+## chinese.child.long$category <- factor(chinese.child.long$category,
+                              levels = c("No disability", "Physical disability", "Sensory disability", "Learning disability"))
+
+
+## chinese.child.long$category
+Figure_4<-ggplot(chinese.child.long, aes(x=age_exact, y=likelihood_of_sm, color = category)) + 
+  geom_jitter(position=position_jitter(h = 0.1, w = 0.1))+
+  scale_x_continuous(breaks=c(4,5,6,7,8,9, 10),limits = c(3.9,10))+
+  scale_y_continuous(limits = c(1, 5))+
+  geom_smooth(method = "lm") + theme_bw() + 
+  xlab("Age (in years)") + ylab("Likelihood of upward social mobility") +
+  theme(axis.title = element_text(size=14), axis.text  = element_text(size=12),legend.text = element_text(size=12))+
+  theme(axis.title.y = element_text(angle = 90, hjust = .5, vjust = .5))+
+  scale_shape_manual(values = c(2,1))+ 
+  scale_color_discrete(labels = c(
+  "no_disability" = "No disability",
+  "sensory" = "Sensory disability",
+  "physical" = "Physical disability",
+  "learning" = "Learning disability"))
+
+Figure_4
+
+Figure_4 <- ggsave("Figure_4.tiff", units="in", width=7, height=6, dpi=700, compression = 'lzw')
+
+## simple slope test
+slope<-sim_slopes(model = chinese_child_model, pred = age_centered, modx = category)
+slope$slope
+## all significant except for physical
+```
+
+```{r}
+## Exploratory Analyses
+## Does culture moderate adults’ awareness of disparities in upward social mobility by disability status?
+
+## pool adult data from the U.S. and China
+adult.long = subset(full.long, age_group == "adult")
+adult_model_culture <- lmer(likelihood_of_sm ~ starting*category*culture + (1|sid) + (1|gender), data = adult.long)
+summary(adult_model_culture)
+## interaction involving culture and starting point
+
+## post-hoc analyses
+emm_adult <- emmeans(adult_model_culture, pairwise ~ starting*culture)
+emm_adult
+emm_pairwise_adult <- emmeans(adult_model_culture, pairwise ~ starting*culture)
+emm_pairwise_adult <-as.data.frame(emm_pairwise_adult)
+emm_pairwise_adult
+
+## calculate the mean and sd for adults in each culture
+aggregate(likelihood_of_sm ~ culture, data = adult.long, FUN = mean)
+aggregate(likelihood_of_sm ~ culture, data = adult.long, FUN = sd)
+
+aggregate(likelihood_of_sm ~ culture, data = subset(adult.long, starting == "low"), FUN = mean)
+aggregate(likelihood_of_sm ~ culture, data = subset(adult.long, starting == "mid"), FUN = mean)
+
+aggregate(likelihood_of_sm ~ culture, data = subset(adult.long, starting == "low"), FUN = sd)
+aggregate(likelihood_of_sm ~ culture, data = subset(adult.long, starting == "mid"), FUN = sd)
+
+## pool child data from the U.S. and China
+child.long = subset(full.long, age_group == "child")
+child_model_culture <- lmer(likelihood_of_sm ~ starting*category*culture + (1|sid) + (1|gender), data = child.long)
+summary(child_model_culture)
+## no effect involving culture
+```
+
+
+```{r}
+## Do children’s beliefs about disparities in social mobility relate to their decision to rectify or perpetuate inequalities 
+
+long.resource<- melt(data = full_data, measure.vars = c("disability_money_choice", 
+                                                  "disability_camp_choice"),
+                      variable.name = "type",
+                      value.name = "choice")
+
+long.resource$choice = as.factor(long.resource$choice)
+long.resource$choice <- ifelse(long.resource$choice == "perpetuate", 0, 1)
+
+## U.S. child data
+long.resource.us.child = subset (long.resource, long.resource$age_group == "child" & long.resource$culture == "US")
+## get the averaged age for the sample
+summary(long.resource.us.child$age_exact)  ## get the averaged age = 7.03
+## center the age
+long.resource.us.child $ age_centered = long.resource.us.child $ age_exact -  7.05
+resource_model_child_us = glmer(choice ~ type * age_centered + (1|sid), family = binomial, data = long.resource.us.child)
+summary(resource_model_child_us)
+
+## Chinese child data
+long.resource.chinese.child = subset (long.resource, long.resource$age_group == "child" & long.resource$culture == "Chinese")
+## get the averaged age for the sample
+summary(long.resource.chinese.child$age_exact)  ## get the averaged age = 6.89
+## center the age
+long.resource.chinese.child $ age_centered = long.resource.chinese.child $ age_exact -  6.89
+resource_model_child_chinese = glmer(choice ~ type * age_centered + (1|sid), family = binomial, data = long.resource.chinese.child)
+summary(resource_model_child_chinese)
+
+## pool data from Chinese and U.S. children
+long.resource.child = subset (long.resource, long.resource$age_group == "child")
+## get the averaged age for the sample
+summary(long.resource.child$age_exact)  ## get the averaged age = 6.96
+## center the age
+long.resource.child $ age_centered = long.resource.child $ age_exact -  6.96
+resource_model_child = glmer(choice ~ type * age_centered *culture + (1|sid), family = binomial, data = long.resource.child)
+summary(resource_model_child)
+```
+
+
+```{r}
+## Figure 5 Left
+Figure_5_Left <- ggplot(long.resource.us.child, aes(x = age_exact, y = choice, color = type)) + 
+  geom_jitter(position = position_jitter(h = 0.1, w = 0.1)) +
+  scale_x_continuous(breaks = c(4,5,6,7,8,9,10), limits = c(3.9, 10)) +
+  scale_y_continuous(limits = c(0, 1)) +
+  geom_smooth(method = "lm") +
+  theme_bw() + 
+  xlab("Age (in years)") + 
+  ylab("Proportion of rectifying inequalities") +
+  theme(axis.title = element_text(size = 14), 
+        axis.text = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        axis.title.y = element_text(angle = 90, hjust = .5, vjust = .5)) +
+  scale_shape_manual(values = c(2, 1))+
+  scale_color_discrete(labels = c("Material", "Opportunity"))
+
+Figure_5_Left
+
+Figure_5_Left <- ggsave("Figure_5_Left.tiff", units="in", width=7, height=6, dpi=700, compression = 'lzw')
+
+
+## Figure_5_Right
+Figure_5_Right <- ggplot(long.resource.chinese.child, aes(x = age_exact, y = choice, color = type)) + 
+  geom_jitter(position = position_jitter(h = 0.1, w = 0.1)) +
+  scale_x_continuous(breaks = c(4,5,6,7,8,9,10), limits = c(3.9, 10)) +
+  scale_y_continuous(limits = c(0, 1)) +
+  geom_smooth(method = "lm") +
+  theme_bw() + 
+  xlab("Age (in years)") + 
+  ylab("Proportion of rectifying inequalities") +
+  theme(axis.title = element_text(size = 14), 
+        axis.text = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        axis.title.y = element_text(angle = 90, hjust = .5, vjust = .5)) +
+  scale_shape_manual(values = c(2, 1))+
+  scale_color_discrete(labels = c("Material", "Opportunity"))
+Figure_5_Right
+Figure_5_Right <- ggsave("Figure_5_Right.tiff", units="in", width=7, height=6, dpi=700, compression = 'lzw')
+```
+
+
+```{r}
+## only look at Chinese child data
+long.resource.chinese.child = subset (long.resource, long.resource$age_group == "child" & long.resource$culture == "Chinese")
+## get the averaged age for the sample
+summary(long.resource.chinese.child$age_exact)  ## get the averaged age = 6.89
+## center the age
+long.resource.chinese.child $ age_centered = long.resource.chinese.child $ age_exact -  6.89
+resource_model_child_chinese = glmer(choice ~ type * age_centered + (1|sid), family = binomial, data = long.resource.chinese.child)
+summary(resource_model_child_chinese)
+```
+
+```{r}
+## contact data
+## Among 80 U.S. child participants, 65 had their caregiver reported their contact with learning disability. Among these children, 29 (44.6%) reported having some contact with learning disability.
+## No Chinese caregiver reported their child have any contact with learning disability.
+```
+
+
+```{r}
+## Additional Analyses in SOM
+## resource allocation of U.S. adults
+long.resource.us.adult = subset (long.resource, long.resource$age_group == "adult" & long.resource$culture == "US")
+resource_model_us_adult = lmer(choice ~ type + (1|sid), data = long.resource.us.adult)
+summary(resource_model_us_adult) ## main effect of type of resource, camp<money
+
+## money
+binom.test(78,82, 0.5, alternative = "two.sided") 
+
+## camp
+binom.test(72,82, 0.5, alternative = "two.sided") 
+
+## resource allocation of Chinese adults
+long.resource.chinese.adult = subset (long.resource, long.resource$age_group == "adult" & long.resource$culture == "Chinese")
+resource_model_china_adult = lmer(choice ~ type + (1|sid), data = long.resource.chinese.adult)
+
+summary(resource_model_china_adult) ## main effect of type of resource, camp<money
+
+## money
+binom.test(97,102, 0.5, alternative = "two.sided") 
+
+## camp
+binom.test(85,102, 0.5, alternative = "two.sided") 
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+## additional playmate questions
+## library(tidyverse)
+library(survival)
+## us
+# 1. Read data
+playmate_us_long<- read.csv("playmate_us_long.csv")
+
+# Set reference group
+playmate_us_long$family_type <- relevel(
+  factor(playmate_us_long$family_type),
+  ref = "no_disability"
+)
+
+## mean center sm ratings
+playmate_us_long <- playmate_us_long %>%
+  mutate(
+    mobility_rating_c = mobility_rating - mean(mobility_rating, na.rm = TRUE)
+  )
+
+# Run model
+playmate_us <- clogit(
+  choice ~ mobility_rating * family_type +
+    strata(sid),
+  data = playmate_us_long
+)
+
+summary(playmate_us)
+```
+
+```{r}
+## cn
+# 1. Read data
+playmate_cn_long<- read.csv("playmate_cn_long.csv")
+
+# Set reference group
+playmate_cn_long$family_type <- relevel(
+  factor(playmate_cn_long$family_type),
+  ref = "no_disability"
+)
+
+## mean center sm ratings
+playmate_cn_long <- playmate_cn_long %>%
+  mutate(
+    mobility_rating_c = mobility_rating - mean(mobility_rating, na.rm = TRUE)
+  )
+
+# Run model
+playmate_cn <- clogit(
+  choice ~ mobility_rating * family_type +
+    strata(sid),
+  data = playmate_cn_long
+)
+
+summary(playmate_cn)
+
+```
+
+
+
+
